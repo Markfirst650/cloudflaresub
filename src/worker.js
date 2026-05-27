@@ -65,23 +65,27 @@ function parsePreferredEndpoints(input) {
 }
 
 function parseVmess(link) {
-  const raw = link.slice('vmess://'.length).trim();
-  const obj = JSON.parse(b64DecodeUtf8(raw));
-  return {
-    type: 'vmess',
-    name: obj.ps || 'vmess',
-    server: obj.add,
-    port: Number(obj.port || 443),
-    uuid: obj.id,
-    cipher: obj.scy || 'auto',
-    network: obj.net || 'ws',
-    tls: obj.tls === 'tls',
-    host: obj.host || '',
-    path: obj.path || '/',
-    sni: obj.sni || obj.host || '',
-    alpn: obj.alpn || '',
-    fp: obj.fp || '',
-  };
+  try {
+    const raw = link.slice('vmess://'.length).trim();
+    const obj = JSON.parse(b64DecodeUtf8(raw));
+    return {
+      type: 'vmess',
+      name: obj.ps || 'vmess',
+      server: obj.add,
+      port: Number(obj.port || 443),
+      uuid: obj.id,
+      cipher: obj.scy || 'auto',
+      network: obj.net || 'ws',
+      tls: obj.tls === 'tls',
+      host: obj.host || '',
+      path: obj.path || '/',
+      sni: obj.sni || obj.host || '',
+      alpn: obj.alpn || '',
+      fp: obj.fp || '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseUrlLike(link, type) {
@@ -113,7 +117,8 @@ function parseRawLinks(input) {
   const result = [];
   for (const line of lines) {
     if (line.startsWith('vmess://')) {
-      result.push(parseVmess(line));
+      const node = parseVmess(line);
+      if (node) result.push(node);
       continue;
     }
     if (line.startsWith('vless://')) {
@@ -515,7 +520,12 @@ async function handleSub(url, env) {
   const raw = await env.SUB_STORE.get(`sub:${id}`);
   if (!raw) return text('not found', 404);
 
-  const record = JSON.parse(raw);
+  let record;
+  try {
+    record = JSON.parse(raw);
+  } catch {
+    return text('invalid data', 500);
+  }
   const nodes = record.nodes || [];
   const target = (url.searchParams.get('target') || 'raw').toLowerCase();
 
