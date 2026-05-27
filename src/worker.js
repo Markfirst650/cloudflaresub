@@ -42,6 +42,10 @@ function escapeYaml(str = '') {
     .replace(/\n/g, ' ');
 }
 
+function escapeYamlSQ(str = '') {
+  return String(str).replace(/'/g, "''").replace(/\n/g, ' ');
+}
+
 function parsePreferredEndpoints(input) {
   return String(input || '')
     .split(/\r?\n/)
@@ -138,7 +142,7 @@ function buildNodes(baseNodes, preferredEndpoints, options = {}) {
     for (const ep of preferredEndpoints) {
       counter += 1;
       const nameParts = [];
-      if (node.name) nameParts.push(node.name);
+      if (node.name) nameParts.push(node.name.replace(/-[a-z0-9]+$/i, ''));
       if (prefix) nameParts.push(prefix);
       if (ep.remark) nameParts.push(ep.remark);
       else nameParts.push(String(counter));
@@ -168,7 +172,7 @@ function encodeVmess(node) {
     type: 'none',
     host: node.host || '',
     path: node.path || '/',
-    tls: node.tls ? 'tls' : '',
+    tls: 'tls',
     sni: node.sni || '',
     alpn: node.alpn || '',
     fp: node.fp || '',
@@ -219,95 +223,70 @@ function renderClash(nodes) {
   const proxies = nodes
     .map((node) => {
       if (node.type === 'vmess') {
-        const lines = [
-          `  - name: "${escapeYaml(node.name)}"`,
-          `    type: vmess`,
-          `    server: ${node.server}`,
-          `    port: ${node.port}`,
-          `    uuid: ${node.uuid}`,
-          `    alterId: 0`,
-          `    cipher: ${node.cipher || 'auto'}`,
-          `    udp: true`,
-          `    tls: ${node.tls ? 'true' : 'false'}`,
-          `    network: ${node.network || 'ws'}`,
+        const parts = [
+          `name: '${escapeYamlSQ(node.name)}'`,
+          `type: vmess`,
+          `server: ${node.server}`,
+          `port: ${node.port}`,
+          `uuid: ${node.uuid}`,
+          `alterId: 0`,
+          `cipher: ${node.cipher || 'auto'}`,
+          `udp: true`,
+          `tls: true`,
+          `network: ${node.network || 'ws'}`,
         ];
-
         if (node.sni) {
-          lines.push(`    servername: "${escapeYaml(node.sni)}"`);
+          parts.push(`servername: '${escapeYamlSQ(node.sni)}'`);
         }
-
         if ((node.network || 'ws') === 'ws') {
-          lines.push(
-            `    ws-opts:`,
-            `      path: "${escapeYaml(node.path || '/')}"`,
-            `      headers:`,
-            `        Host: "${escapeYaml(node.host || node.sni || '')}"`
-          );
+          const host = node.host || node.sni || '';
+          parts.push(`ws-opts: { path: '${escapeYamlSQ(node.path || '/')}', headers: { Host: '${escapeYamlSQ(host)}' } }`);
         }
-
-        return lines.join('\n');
+        return `    - { ${parts.join(', ')} }`;
       }
 
       if (node.type === 'vless') {
-        const lines = [
-          `  - name: "${escapeYaml(node.name)}"`,
-          `    type: vless`,
-          `    server: ${node.server}`,
-          `    port: ${node.port}`,
-          `    uuid: ${node.uuid}`,
-          `    udp: true`,
-          `    tls: ${node.tls ? 'true' : 'false'}`,
-          `    network: ${node.network || 'ws'}`,
+        const parts = [
+          `name: '${escapeYamlSQ(node.name)}'`,
+          `type: vless`,
+          `server: ${node.server}`,
+          `port: ${node.port}`,
+          `uuid: ${node.uuid}`,
+          `udp: true`,
+          `tls: true`,
+          `network: ${node.network || 'ws'}`,
         ];
-
         if (node.sni) {
-          lines.push(`    servername: "${escapeYaml(node.sni)}"`);
+          parts.push(`servername: '${escapeYamlSQ(node.sni)}'`);
         }
-
         if ((node.network || 'ws') === 'ws') {
-          lines.push(
-            `    ws-opts:`,
-            `      path: "${escapeYaml(node.path || '/')}"`,
-            `      headers:`,
-            `        Host: "${escapeYaml(node.host || node.sni || '')}"`
-          );
+          const host = node.host || node.sni || '';
+          parts.push(`ws-opts: { path: '${escapeYamlSQ(node.path || '/')}', headers: { Host: '${escapeYamlSQ(host)}' } }`);
         }
-
-        return lines.join('\n');
+        return `    - { ${parts.join(', ')} }`;
       }
 
       if (node.type === 'trojan') {
-        const lines = [
-          `  - name: "${escapeYaml(node.name)}"`,
-          `    type: trojan`,
-          `    server: ${node.server}`,
-          `    port: ${node.port}`,
-          `    password: "${escapeYaml(node.password || '')}"`,
-          `    udp: true`,
+        const parts = [
+          `name: '${escapeYamlSQ(node.name)}'`,
+          `type: trojan`,
+          `server: ${node.server}`,
+          `port: ${node.port}`,
+          `password: '${escapeYamlSQ(node.password || '')}'`,
+          `udp: true`,
+          `tls: true`,
         ];
-
         if (node.sni) {
-          lines.push(`    sni: "${escapeYaml(node.sni)}"`);
+          parts.push(`sni: '${escapeYamlSQ(node.sni)}'`);
         }
-
-        if (node.tls !== false) {
-          lines.push(`    tls: true`);
-        }
-
         if (node.network) {
-          lines.push(`    network: ${node.network}`);
+          parts.push(`network: ${node.network}`);
         }
-
         if (node.network === 'ws') {
-          lines.push(
-            `    ws-opts:`,
-            `      path: "${escapeYaml(node.path || '/')}"`,
-            `      headers:`,
-            `        Host: "${escapeYaml(node.host || node.sni || '')}"`
-          );
+          const host = node.host || node.sni || '';
+          parts.push(`ws-opts: { path: '${escapeYamlSQ(node.path || '/')}', headers: { Host: '${escapeYamlSQ(host)}' } }`);
         }
-
-        return lines.join('\n');
+        return `    - { ${parts.join(', ')} }`;
       }
 
       return '';
@@ -315,43 +294,43 @@ function renderClash(nodes) {
     .filter(Boolean);
 
   const proxyNames = nodes.map(
-    (node) => `      - "${escapeYaml(node.name)}"`
+    (node) => `'${escapeYamlSQ(node.name)}'`
   );
 
   const allGroupMembers = [
-    `      - "自动选择"`,
+    `'自动选择'`,
     ...proxyNames,
-    `      - DIRECT`,
+    `DIRECT`,
   ];
 
-  const autoGroupMembers = proxyNames.length ? proxyNames : [`      - DIRECT`];
+  const autoGroupMembers = proxyNames.length ? proxyNames : [`DIRECT`];
 
   return [
     `mixed-port: 7890`,
-    `allow-lan: false`,
+    `allow-lan: true`,
+    `bind-address: '*'`,
     `mode: rule`,
     `log-level: info`,
-    `ipv6: true`,
-    ``,
+    `external-controller: '127.0.0.1:9090'`,
+    `dns:`,
+    `    enable: true`,
+    `    ipv6: false`,
+    `    default-nameserver: [223.5.5.5, 119.29.29.29, 114.114.114.114]`,
+    `    enhanced-mode: fake-ip`,
+    `    fake-ip-range: 198.18.0.1/16`,
+    `    use-hosts: true`,
+    `    respect-rules: true`,
+    `    proxy-server-nameserver: [223.5.5.5, 119.29.29.29, 114.114.114.114]`,
+    `    nameserver: [223.5.5.5, 119.29.29.29, 114.114.114.114]`,
+    `    fallback: [1.1.1.1, 8.8.8.8]`,
+    `    fallback-filter: { geoip: true, geoip-code: CN, geosite: [gfw], ipcidr: [240.0.0.0/4], domain: [+.google.com, +.facebook.com, +.youtube.com] }`,
     `proxies:`,
     ...(proxies.length ? proxies : []),
-    ``,
     `proxy-groups:`,
-    `  - name: "自动选择"`,
-    `    type: url-test`,
-    `    url: "http://www.gstatic.com/generate_204"`,
-    `    interval: 300`,
-    `    tolerance: 50`,
-    `    proxies:`,
-    ...autoGroupMembers,
-    ``,
-    `  - name: "节点选择"`,
-    `    type: select`,
-    `    proxies:`,
-    ...allGroupMembers,
-    ``,
+    `    - { name: 自动选择, type: url-test, proxies: [${autoGroupMembers.join(', ')}], url: 'http://www.gstatic.com/generate_204', interval: 86400 }`,
+    `    - { name: 节点选择, type: select, proxies: [${allGroupMembers.join(', ')}] }`,
     `rules:`,
-    `  - MATCH,节点选择`,
+    `    - 'MATCH,节点选择'`,
   ].join('\n');
 }
 
@@ -360,7 +339,7 @@ function renderSurge(nodes, baseUrl, accessToken) {
     .filter((node) => node.type === 'vmess' || node.type === 'trojan')
     .map((node) => {
       if (node.type === 'vmess') {
-        return `${node.name} = vmess, ${node.server}, ${node.port}, username=${node.uuid}, ws=true, ws-path=${node.path || '/'}, ws-headers=Host:${node.host || ''}, tls=${node.tls ? 'true' : 'false'}, sni=${node.sni || ''}`;
+        return `${node.name} = vmess, ${node.server}, ${node.port}, username=${node.uuid}, ws=true, ws-path=${node.path || '/'}, ws-headers=Host:${node.host || ''}, tls=true, sni=${node.sni || ''}`;
       }
       return `${node.name} = trojan, ${node.server}, ${node.port}, password=${node.password || ''}, sni=${node.sni || ''}`;
     });
