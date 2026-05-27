@@ -425,79 +425,83 @@ async function handleGenerate(request, env, url) {
     return json({ ok: false, error: '请求体不是合法 JSON' }, 400);
   }
 
-  const baseNodes = parseRawLinks(body.nodeLinks || '');
-  const preferredEndpoints = parsePreferredEndpoints(body.preferredIps || '');
+  try {
+    const baseNodes = parseRawLinks(body.nodeLinks || '');
+    const preferredEndpoints = parsePreferredEndpoints(body.preferredIps || '');
 
-  if (!baseNodes.length) return json({ ok: false, error: '没有识别到可用节点' }, 400);
-  if (!preferredEndpoints.length) return json({ ok: false, error: '没有识别到可用优选地址' }, 400);
+    if (!baseNodes.length) return json({ ok: false, error: '没有识别到可用节点' }, 400);
+    if (!preferredEndpoints.length) return json({ ok: false, error: '没有识别到可用优选地址' }, 400);
 
-  const options = {
-    namePrefix: body.namePrefix || '',
-    keepOriginalHost: body.keepOriginalHost !== false,
-  };
+    const options = {
+      namePrefix: body.namePrefix || '',
+      keepOriginalHost: body.keepOriginalHost !== false,
+    };
 
-  const nodes = buildNodes(baseNodes, preferredEndpoints, options);
+    const nodes = buildNodes(baseNodes, preferredEndpoints, options);
 
-  const payload = {
-    version: 1,
-    createdAt: new Date().toISOString(),
-    options,
-    nodes,
-  };
+    const payload = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      options,
+      nodes,
+    };
 
-  const dedupHash = await buildDedupHash(body);
-  const dedupKey = `dedup:${dedupHash}`;
+    const dedupHash = await buildDedupHash(body);
+    const dedupKey = `dedup:${dedupHash}`;
 
-  let id = await env.SUB_STORE.get(dedupKey);
+    let id = await env.SUB_STORE.get(dedupKey);
 
-  if (!id) {
-    id = await createUniqueShortId(env);
-    const ttl = 60 * 60 * 24 * 7; // 7天
+    if (!id) {
+      id = await createUniqueShortId(env);
+      const ttl = 60 * 60 * 24 * 7;
 
-    await env.SUB_STORE.put(`sub:${id}`, JSON.stringify(payload), {
-      expirationTtl: ttl,
+      await env.SUB_STORE.put(`sub:${id}`, JSON.stringify(payload), {
+        expirationTtl: ttl,
+      });
+
+      await env.SUB_STORE.put(dedupKey, id, {
+        expirationTtl: ttl,
+      });
+    }
+
+    const origin = url.origin;
+    const accessToken = env.SUB_ACCESS_TOKEN || '';
+    const withToken = (target) =>
+      `${origin}/sub/${id}${
+        target
+          ? `?target=${target}&token=${encodeURIComponent(accessToken)}`
+          : `?token=${encodeURIComponent(accessToken)}`
+      }`;
+
+    return json({
+      ok: true,
+      storage: 'kv',
+      deduplicated: true,
+      shortId: id,
+      urls: {
+        auto: withToken(''),
+        raw: withToken('raw'),
+        clash: withToken('clash'),
+        surge: withToken('surge'),
+      },
+      counts: {
+        inputNodes: baseNodes.length,
+        preferredEndpoints: preferredEndpoints.length,
+        outputNodes: nodes.length,
+      },
+      preview: nodes.slice(0, 20).map((node) => ({
+        name: node.name,
+        type: node.type,
+        server: node.server,
+        port: node.port,
+        host: node.host || '',
+        sni: node.sni || '',
+      })),
+      warnings: accessToken ? [] : ['未检测到 SUB_ACCESS_TOKEN，订阅链接将没有第二层访问保护。'],
     });
-
-    await env.SUB_STORE.put(dedupKey, id, {
-      expirationTtl: ttl,
-    });
+  } catch (err) {
+    return json({ ok: false, error: err.message || '服务器内部错误' }, 500);
   }
-
-  const origin = url.origin;
-  const accessToken = env.SUB_ACCESS_TOKEN || '';
-  const withToken = (target) =>
-    `${origin}/sub/${id}${
-      target
-        ? `?target=${target}&token=${encodeURIComponent(accessToken)}`
-        : `?token=${encodeURIComponent(accessToken)}`
-    }`;
-
-  return json({
-    ok: true,
-    storage: 'kv',
-    deduplicated: true,
-    shortId: id,
-    urls: {
-      auto: withToken(''),
-      raw: withToken('raw'),
-      clash: withToken('clash'),
-      surge: withToken('surge'),
-    },
-    counts: {
-      inputNodes: baseNodes.length,
-      preferredEndpoints: preferredEndpoints.length,
-      outputNodes: nodes.length,
-    },
-    preview: nodes.slice(0, 20).map((node) => ({
-      name: node.name,
-      type: node.type,
-      server: node.server,
-      port: node.port,
-      host: node.host || '',
-      sni: node.sni || '',
-    })),
-    warnings: accessToken ? [] : ['未检测到 SUB_ACCESS_TOKEN，订阅链接将没有第二层访问保护。'],
-  });
 }
 
 function validateAccessToken(url, env) {
